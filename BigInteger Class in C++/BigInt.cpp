@@ -344,3 +344,133 @@ bool BigInt::operator<(const BigInt & that) const
     }
     return currentSlotThis->value < currentSlotThat->value;
 }
+
+bool BigInt::operator<=(const BigInt & that) const
+{
+    return !(that < *this);
+}
+
+bool BigInt::operator>(const BigInt & that) const
+{
+    return that < *this;
+}
+
+bool BigInt::operator>=(const BigInt & that) const
+{
+    return !(*this < that);
+}
+
+BigInt & BigInt::operator++()
+{
+    return *this += BigInt(1);
+}
+
+BigInt BigInt::operator++(int)
+{
+    BigInt temp(*this);
+    operator++();
+    return temp;
+}
+
+BigInt::operator bool() const
+{
+    return *this != 0;
+}
+
+bool BigInt::operator!() const
+{
+    return !bool(*this);
+}
+
+// Remove and delete all slots from an object.
+void BigInt::clear()
+{
+    slot * currentSlot = start;
+    slot * placeholder;
+    while (currentSlot != nullptr)
+    {
+        placeholder = currentSlot;
+        currentSlot = placeholder->next;
+        delete placeholder;
+    }
+    start = nullptr;
+    end = nullptr;
+    numberOfSlots = 0;
+}
+
+// Put a slot at the end of the list.
+void BigInt::put(int value)
+{
+    slot * newslot = new slot;
+    newslot->value = value;
+    newslot->next = nullptr;
+    slot * endOfList = end;
+    if (numberOfSlots)
+    {
+        endOfList->next = newslot;
+    }
+    else
+    {
+        start = newslot;
+    }
+    end = newslot;
+    newslot->previous = endOfList;
+    numberOfSlots++;
+}
+
+// Push a slot to the start of the list.
+void BigInt::push(int value)
+{
+    slot * newslot = new slot;
+    newslot->value = value;
+    newslot->next = start;
+    slot * startOfList = start;
+    if (numberOfSlots)
+    {
+        startOfList->previous = newslot;
+    }
+    else
+    {
+        end = newslot;
+    }
+    start = newslot;
+    newslot->previous = nullptr;
+    numberOfSlots++;
+}
+
+std::ostream & operator<<(std::ostream & os, const BigInt & obj)
+{
+    if (!obj.isPositive)
+    {
+        os.put('-');
+    }
+    
+    slot * currentSlot = obj.start;
+    while (currentSlot != nullptr)
+    {
+        int value = currentSlot->value;
+        int fullValue = value;
+        int numberOfPaddingZeros = 1;
+        int digit = 10000000;
+        if (currentSlot == obj.start && (fullValue == 0))
+        {
+            os.put('0');
+        }
+        else
+        {
+            while (digit)
+            {
+                // Pad the value in the slot with leading zeros to fill the entire slot, except when it is the first slot.
+                if (currentSlot != obj.start || (fullValue >= digit))
+                {
+                    os.put((value / digit) + '0');
+                }
+                
+                value %= digit;
+                digit /= 10;
+            }
+        }
+        currentSlot = currentSlot->next;
+    }
+    return os;
+}
