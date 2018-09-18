@@ -82,3 +82,265 @@ BigInt::~BigInt()
 {
     clear();
 }
+
+BigInt & BigInt::operator=(const BigInt & that)
+{
+    if (this != &that)
+    {
+        copy(that);
+    }
+    return *this;
+}
+
+void BigInt::copy(const BigInt & that)
+{
+    clear();
+    isPositive = that.isPositive;
+    slot * currentSlot = that.start;
+    while (currentSlot != nullptr)
+    {
+        put(currentSlot->value);
+        currentSlot = currentSlot->next;
+    }
+}
+
+// Depending on the signs of LHS and RHS, either addition or subtraction is required.
+BigInt & BigInt::operator+=(const BigInt & that)
+{
+    if (isPositive && that.isPositive)
+    {
+        add(that);
+    }
+    else if (isPositive && !that.isPositive)
+    {
+        BigInt placeholder(that);
+        placeholder.isPositive = true;
+        subtract(placeholder);
+    }
+    else if (!isPositive && that.isPositive)
+    {
+        BigInt placeholder(that);
+        placeholder.subtract(*this);
+        copy(placeholder);
+    }
+    else
+    {
+        add(that);
+        isPositive = false;
+    }
+    
+    return *this;
+}
+
+// Addition. Adds slots together, remembers any carry (either no carry (0) or a carry (1)) and adds those to the next slots.
+// Keeps going until all slots of both BigInts and the carry are empty.
+void BigInt::add(const BigInt & that)
+{
+    BigInt placeholder(*this);
+    slot * currentSlotThat = that.end;
+    slot * currentSlotThis = placeholder.end;
+    
+    clear();
+    bool carry = false;
+    while (currentSlotThis != nullptr || currentSlotThat != nullptr || carry)
+    {
+        int thisValue = 0;
+        int thatValue = 0;
+        if (currentSlotThis != nullptr)
+        {
+            thisValue = currentSlotThis->value;
+            currentSlotThis = currentSlotThis->previous;
+        }
+        if (currentSlotThat != nullptr)
+        {
+            thatValue = currentSlotThat->value;
+            currentSlotThat = currentSlotThat->previous;
+        }
+        int sum = thisValue + thatValue + carry;
+        carry = sum >= valuePerSlot;
+        push(sum % (valuePerSlot));
+    }
+}
+
+void BigInt::subtract(const BigInt & that)
+{
+    // Check in advance whether the subtraction will cause the sign of this to flip, by checking if RHS > LHS
+    // If that's the case, replace LHS - RHS with (RHS - LHS) * -1
+    if (that > *this)
+    {
+        BigInt placeholder(that);
+        placeholder.subtract(*this);
+        copy(placeholder);
+        isPositive = false;
+    }
+    else
+    {
+        BigInt placeholder(*this);
+        slot * currentSlotThat = that.end;
+        slot * currentSlotThis = placeholder.end;
+        
+        clear();
+        
+        bool carry = false;
+        while (currentSlotThis != nullptr || currentSlotThat != nullptr)
+        {
+            int thisValue = 0;
+            int thatValue = 0;
+            if (currentSlotThis != nullptr)
+            {
+                thisValue = currentSlotThis->value;
+                currentSlotThis = currentSlotThis->previous;
+            }
+            if (currentSlotThat != nullptr)
+            {
+                thatValue = currentSlotThat->value;
+                currentSlotThat = currentSlotThat->previous;
+            }
+            int diff = thisValue - carry - thatValue;
+            if (diff < 0)
+            {
+                carry = true;
+                diff = -1 * diff;
+            }
+            else
+            {
+                carry = false;
+            }
+            push(diff);
+        }
+        removeLeadingZeros();
+    }
+}
+
+// Substraction can lead to leading zero valued slots. These need to be removed asap, since this breaks comparison.
+void BigInt::removeLeadingZeros()
+{
+    slot * currentSlot = start;
+    slot * helper;
+    
+    while (currentSlot->next != nullptr && currentSlot->value == 0)
+    {
+        helper = currentSlot;
+        currentSlot = currentSlot->next;
+        delete helper;
+    }
+    start = currentSlot;
+    currentSlot->previous = nullptr;
+}
+
+
+BigInt BigInt::operator+(const BigInt & that) const
+{
+    return BigInt(*this) += that;
+}
+
+// subtraction operators are defined as LHS - RHS = LHS + (-1 * RHS)
+BigInt & BigInt::operator-=(const BigInt & that)
+{
+    BigInt placeholder(that);
+    placeholder.isPositive = !placeholder.isPositive;
+    return *this += placeholder;
+}
+
+BigInt BigInt::operator-(const BigInt & that) const
+{
+    return BigInt(*this) -= that;
+}
+
+// Cross-multiplication of all slots, with adding the sum of the slotcount worth of zero-slots afterwards. Accumulating all the results.
+BigInt & BigInt::operator*=(const BigInt & that)
+{
+    BigInt placeholder(*this);
+    slot * currentSlotThis = placeholder.end;
+    
+    BigInt prodPlaceholder;
+    
+    clear();
+    
+    int thisSlotCounter = 0;
+    while (currentSlotThis != nullptr)
+    {
+        int thatSlotCounter = 0;
+        slot * currentSlotThat = that.end;
+        while (currentSlotThat != nullptr)
+        {
+            prodPlaceholder.clear();
+            long long prod = (long long)currentSlotThis->value * (long long)currentSlotThat->value;
+            if (prod >= valuePerSlot)
+            {
+                int overflow = (int)(prod / valuePerSlot);
+                prodPlaceholder.put(overflow);
+                prod %= valuePerSlot;
+            }
+            prodPlaceholder.put((int)prod);
+            for (int numberOfZeroSlots = 0; numberOfZeroSlots < thisSlotCounter + thatSlotCounter; numberOfZeroSlots++)
+            {
+                prodPlaceholder.put(0);
+            }
+            *this += prodPlaceholder;
+            thatSlotCounter++;
+            currentSlotThat = currentSlotThat->previous;
+        }
+        thisSlotCounter++;
+        currentSlotThis = currentSlotThis->previous;
+    }
+    isPositive = !(placeholder.isPositive ^ that.isPositive);
+    
+    return *this;
+}
+
+BigInt BigInt::operator*(const BigInt & that) const
+{
+    return BigInt(*this) *= that;
+}
+
+// Equality check, first check for same amount of slots. If that differs, numbers can't be equal. Second checks for signs, then checks if all slots themselves have equal value.
+bool BigInt::operator==(const BigInt & that) const
+{
+    if (this->numberOfSlots != that.numberOfSlots)
+    {
+        return false;
+    }
+    if (isPositive != that.isPositive)
+    {
+        return false;
+    }
+    slot * currentSlotThis = end;
+    slot * currentSlotThat = that.end;
+    
+    while (currentSlotThis != nullptr)
+    {
+        if (currentSlotThis->value != currentSlotThat->value)
+        {
+            return false;
+        }
+        currentSlotThat = currentSlotThat->previous;
+        currentSlotThis = currentSlotThis->previous;
+    }
+    return true;
+}
+
+bool BigInt::operator!=(const BigInt & that) const
+{
+    
+    return !(*this == that);
+}
+
+// Relational operator. First compares the number of slots, to see if there is already an answer, same for signs. Else it starts at the head of the list to test if the values are equal.
+// When they are not equal anymore, they can be compared for a result.
+bool BigInt::operator<(const BigInt & that) const
+{
+    if (this->numberOfSlots != that.numberOfSlots || this->isPositive != that.isPositive)
+    {
+        return this->numberOfSlots * (this->isPositive - 0.5) < that.numberOfSlots * (that.isPositive - 0.5);
+    }
+    
+    slot * currentSlotThis = start;
+    slot * currentSlotThat = that.start;
+    while (currentSlotThis->next != nullptr && currentSlotThis->value == currentSlotThat->value)
+    {
+        currentSlotThat = currentSlotThat->next;
+        currentSlotThis = currentSlotThis->next;
+    }
+    return currentSlotThis->value < currentSlotThat->value;
+}
